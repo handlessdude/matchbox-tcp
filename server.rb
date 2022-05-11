@@ -20,7 +20,9 @@ set_game_state = lambda { | new_matches, new_cliend_id, new_action |
 reset_game = lambda {
   set_game_state.call(33, '', '')
 }
+game_is_over = -> { game_state[:matches] <= 0 }
 two_players_appeared = -> { clients.length>1 }
+
 action_reducer = lambda { | client_id, action |
   return false unless actions.include? action
 
@@ -41,53 +43,58 @@ puts "Server running on #{config[:host]}:#{config[:port]}"
 begin
   loop do
     Thread.start(server.accept) do |client|
+      puts "clients.length = #{clients.length} #{two_players_appeared.call}"
+      if game_is_over.call
+        message = 'Restarting game!'
+        client.puts message
+        puts message
+        reset_game.call
+      end
       if two_players_appeared.call
         client.puts 'Too many clients on the server. Try join later',
                     'Server connection terminated'
-        client.close
-        # return 0
-        # break
-        # else
-      end
+        puts '3rd player attempted to join the game. Rejection.'
 
-      id = :"player_#{clients.length + 1}"
-      clients[id] = client
-      puts "=> Client #{id} arrived."
+      else
+        id = :"player_#{clients.length + 1}"
+        clients[id] = client
+        puts "=> Client #{id} arrived."
 
-      client.puts 'Server connection established!',
-                  "Your id: #{id}"
+        client.puts 'Server connection established!',
+                    "Your id: #{id}"
 
-      clients.each do |client_id, client|
-        client.puts "Clients on the server right now: #{clients.length}#{two_players_appeared.call ? '. Two players appeared. GAME START!' : ''}"
-      end
-
-      while (action = client.gets.strip)
-        unless two_players_appeared.call
-          client.puts 'Second player did not arrived yet. Be patient!'
-          next
+        clients.each do |client_id, client|
+          client.puts "Clients on the server right now: #{clients.length}#{two_players_appeared.call ? '. Two players appeared. GAME START!' : ''}"
         end
-        am_i_prev_player = (id == game_state[:lastTurn][:client_id])
-        if action_reducer.call(id, action)
-          game_is_over = (game_state[:matches] <= 0)
-          message = if game_is_over
-                      "Game is over!\n#{game_state[:lastTurn][:client_id]} has taken all the matches!\nThe winner is #{clients.keys.detect { |client_id | !(client_id == game_state[:lastTurn][:client_id]) } }!"
-                    else
-                      "#{id} #{am_i_prev_player ? 'changes their mind and ' : ''} takes #{action} matches.\nMatches on the table: #{game_state[:matches]}"
-                    end
-          clients.each do |client_id, client|
-            client.puts message
+
+        while (action = client.gets.strip)
+          break if game_is_over.call
+
+          unless two_players_appeared.call
+            client.puts 'Second player did not arrived yet. Be patient!'
+            next
           end
-          break if game_is_over
-        else
-          client.puts "Unknown action: #{action}. Try something else!"
+          am_i_prev_player = (id == game_state[:lastTurn][:client_id])
+          if action_reducer.call(id, action)
+            message = if game_is_over.call
+                        "Game is over!\n#{game_state[:lastTurn][:client_id]} has taken all the matches!\nThe winner is #{clients.keys.detect { |client_id | !(client_id == game_state[:lastTurn][:client_id]) } }! Enter any key to leave..."
+                      else
+                        "#{id} #{am_i_prev_player ? 'changes their mind and ' : ''} takes #{action} matches.\nMatches on the table: #{game_state[:matches]}"
+                      end
+            clients.each do |client_id, client|
+              client.puts message
+            end
+          else
+            client.puts "Unknown action: #{action}. Try something else!"
+          end
         end
+
+        client.puts 'Server connection terminated'
+        puts "<= Client #{id} has left."
+        clients.delete(id)
       end
 
-      client.puts 'Server connection terminated'
-      puts "<= Client #{id} has left."
-      clients.delete(id)
       client.close
-
     end
   end
 rescue Errno::ECONNRESET, Errno::EPIPE => e
