@@ -67,7 +67,8 @@ begin
           client.puts "Clients on the server right now: #{clients.length}#{two_players_appeared.call ? '. Two players appeared. GAME START!' : ''}"
         end
 
-        while (action = client.gets.strip)
+        while (action = client.gets)
+          action = action.strip
           break if game_is_over.call
 
           unless two_players_appeared.call
